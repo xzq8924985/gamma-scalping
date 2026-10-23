@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gamma Scalping 实例 · 交易全过程可视化</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --card2:#1c2029; --bd:#272d3a;
+    --tx:#e6e9ef; --tx2:#9aa4b8; --tx3:#6b7686;
+    --red:#f2555a;      /* 涨 / 盈利 / 买入 */
+    --green:#26c281;    /* 跌 / 亏损 / 卖出 */
+    --blue:#4a9eff;     /* 中性 / 信息 */
+    --purple:#a78bfa;   /* Gamma */
+    --orange:#f5a524;   /* 提示 / Vega */
+    --teal:#2dd4bf;     /* Theta */
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--tx);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.6; padding:32px 20px 80px;
+  }
+  .wrap{max-width:1180px;margin:0 auto}
+
+  header{border-bottom:1px solid var(--bd);padding-bottom:24px;margin-bottom:32px}
+  h1{font-size:26px;font-weight:700;letter-spacing:-.3px}
+  .sub{color:var(--tx2);font-size:14px;margin-top:8px}
+  .src{color:var(--tx3);font-size:12.5px;margin-top:6px}
+  .src a{color:var(--blue);text-decoration:none}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin-top:22px}
+  .kpi{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px 16px}
+  .kpi .k{font-size:11.5px;color:var(--tx3);letter-spacing:.5px}
+  .kpi .v{font-size:19px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+  .kpi .u{font-size:12px;color:var(--tx2);font-weight:400;margin-left:2px}
+
+  section{margin-top:44px}
+  .sec-h{display:flex;align-items:baseline;gap:12px;margin-bottom:6px}
+  .sec-n{font-size:12px;font-weight:700;color:var(--bg);background:var(--blue);
+         border-radius:5px;padding:2px 8px;letter-spacing:.5px}
+  .sec-n.a{background:var(--red)}
+  .sec-n.b{background:var(--green)}
+  .sec-n.c{background:var(--purple)}
+  .sec-n.d{background:var(--orange)}
+  h2{font-size:19px;font-weight:700}
+  .sec-d{color:var(--tx2);font-size:13.5px;margin-bottom:18px}
+
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:20px;margin-bottom:16px}
+  .card-t{font-size:13px;font-weight:700;color:var(--tx);margin-bottom:2px}
+  .card-s{font-size:12px;color:var(--tx3);margin-bottom:14px}
+
+  svg{display:block;width:100%;height:auto;overflow:visible}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+  th{text-align:right;font-weight:600;color:var(--tx3);font-size:11.5px;letter-spacing:.4px;
+     padding:9px 10px;border-bottom:1px solid var(--bd);white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  td{padding:11px 10px;border-bottom:1px solid #20252f;text-align:right;white-space:nowrap}
+  tbody tr:last-child td{border-bottom:none}
+  tr.sum td{border-top:1px solid var(--bd);font-weight:700;background:#1b1f28}
+  .tag{display:inline-block;border-radius:4px;padding:2px 7px;font-size:11.5px;font-weight:700}
+  .tag.b{background:rgba(242,85,90,.15);color:var(--red)}
+  .tag.s{background:rgba(38,194,129,.15);color:var(--green)}
+  .pos{color:var(--red)} .neg{color:var(--green)} .flat{color:var(--tx2)}
+
+  .note{background:rgba(245,165,36,.07);border:1px solid rgba(245,165,36,.28);
+        border-left:3px solid var(--orange);border-radius:8px;padding:13px 16px;
+        font-size:12.8px;color:#e2d6bd;margin-top:14px}
+  .note b{color:var(--orange)}
+  .note-tip{background:rgba(74,158,255,.07);border:1px solid rgba(74,158,255,.25);
+            border-left:3px solid var(--blue);color:#c8d8ee}
+  .note-tip b{color:var(--blue)}
+
+  .lgd{display:flex;flex-wrap:wrap;gap:16px;font-size:12px;color:var(--tx2);margin-top:12px}
+  .lgd i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:860px){.grid2{grid-template-columns:1fr}}
+  footer{margin-top:50px;padding-top:20px;border-top:1px solid var(--bd);
+         font-size:12px;color:var(--tx3);line-height:1.9}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Gamma Scalping 实例 · 交易全过程可视化</h1>
+  <div class="sub">上证50ETF期权 · 2023年3月合约 · 行权价 2.75 跨式组合 ｜ 2023-02-15 → 2023-02-24（7个交易日，共 8 笔成交）</div>
+  <div class="src">数据来源：微信公众号「发鹏期权说」《期权买方的Gamma Scalping技巧》 ·
+    <a href="https://mp.weixin.qq.com/s/g_w17wjm5rV5nTNGV6CxgA" target="_blank">原文链接</a>
+  </div>
+  <div class="kpis">
+    <div class="kpi"><div class="k">账户规模</div><div class="v">100<span class="u">万</span></div></div>
+    <div class="kpi"><div class="k">策略占用资金</div><div class="v">51,340<span class="u">元</span></div></div>
+    <div class="kpi"><div class="k">策略总收益</div><div class="v pos">+10,228<span class="u">元</span></div></div>
+    <div class="kpi"><div class="k">收益率</div><div class="v pos">+1.02<span class="u">%</span></div></div>
+    <div class="kpi"><div class="k">对冲次数</div><div class="v">3<span class="u">次</span></div></div>
+    <div class="kpi"><div class="k">合约乘数</div><div class="v">10,000</div></div>
+  </div>
+  <div class="note"><b>口径说明：</b>总收益 10,228 元为按文中全部成交价逐笔重算的核算值（认购腿 +158 ／ 认沽腿 +10,070）。
+    原文给出的认沽腿为 +10,470、合计 +10,628，与逐笔成交价核算结果差 400 元，疑为笔误。本页所有图表与表格一律采用重算值，
+    差异明细见文末「数据核对」。</div>
+</header>
+
+<!-- ============ 1. 全局时间轴 ============ -->
+<section>
+  <div class="sec-h"><span class="sec-n">01</span><h2>全局脉络：标的价格路径与四个关键节点</h2></div>
+  <div class="sec-d">整个策略走完一轮「建仓 → 对冲① → 对冲② → 全部了结」。50ETF 在 2.721~2.798 之间来回摆动了三次，每次摆动都超过 1%，正好三次触发 Gamma Scalping 阈值。</div>
+
+  <div class="card">
+    <div class="card-t">上证50ETF 标的价格路径（2023-02-15 → 02-24）</div>
+    <div class="card-s">紫虚线为行权价 2.750 ｜ 红点=相对上一节点上涨，绿点=下跌</div>
+    <svg viewBox="0 0 1000 345" role="img">
+      <g stroke="#222833" stroke-width="1">
+        <line x1="60" y1="40"  x2="980" y2="40"/>
+        <line x1="60" y1="76"  x2="980" y2="76"/>
+        <line x1="60" y1="112" x2="980" y2="112"/>
+        <line x1="60" y1="148" x2="980" y2="148"/>
+        <line x1="60" y1="184" x2="980" y2="184"/>
+        <line x1="60" y1="220" x2="980" y2="220"/>
+      </g>
+      <g fill="#6b7686" font-size="11" text-anchor="end">
+        <text x="52" y="44">2.810</text><text x="52" y="80">2.790</text>
+        <text x="52" y="116">2.770</text><text x="52" y="152">2.750</text>
+        <text x="52" y="188">2.730</text><text x="52" y="224">2.710</text>
+      </g>
+      <line x1="60" y1="148" x2="980" y2="148" stroke="#a78bfa" stroke-width="1.4" stroke-dasharray="7 5" opacity=".8"/>
+      <text x="978" y="142" fill="#a78bfa" font-size="11" text-anchor="end">行权价 2.750</text>
+
+      <polyline points="130,130 400,200.2 670,61.6 940,173.2"
+                fill="none" stroke="#4a9eff" stroke-width="2.6" stroke-linejoin="round"/>
+      <circle cx="130" cy="130"   r="6" fill="#0f1115" stroke="#4a9eff" stroke-width="2.6"/>
+      <circle cx="400" cy="200.2" r="6" fill="#0f1115" stroke="#26c281" stroke-width="2.6"/>
+      <circle cx="670" cy="61.6"  r="6" fill="#0f1115" stroke="#f2555a" stroke-width="2.6"/>
+      <circle cx="940" cy="173.2" r="6" fill="#0f1115" stroke="#26c281" stroke-width="2.6"/>
+
+      <g font-size="13" font-weight="700" text-anchor="middle">
+        <text x="130" y="118" fill="#4a9eff">2.760</text>
+        <text x="400" y="219" fill="#26c281">2.721</text>
+        <text x="670" y="50"  fill="#f2555a">2.798</text>
+        <text x="940" y="192" fill="#26c281">2.736</text>
+      </g>
+      <g font-size="11.5" text-anchor="middle" font-weight="600">
+        <text x="265" y="172" fill="#26c281">−1.41%</text>
+        <text x="535" y="144" fill="#f2555a">+2.83%</text>
+        <text x="805" y="126" fill="#26c281">−2.22%</text>
+      </g>
+
+      <g>
+        <rect x="76"  y="252" width="200" height="78" rx="8" fill="#1c2029" stroke="#272d3a"/>
+        <text x="92"  y="273" fill="#9aa4b8" font-size="11.5">02-15 · 建仓</text>
+        <text x="92"  y="294" fill="#e6e9ef" font-size="12">IV 购17.50 ／ 沽16.51</text>
+        <text x="92"  y="315" fill="#9aa4b8" font-size="12">ΔCash <tspan fill="#e6e9ef">+1,442</tspan></text>
+
+        <rect x="346" y="252" width="200" height="78" rx="8" fill="#1c2029" stroke="#272d3a"/>
+        <text x="362" y="273" fill="#9aa4b8" font-size="11.5">02-17 · 对冲①</text>
+        <text x="362" y="294" fill="#e6e9ef" font-size="12">IV 购16.99 ／ 沽17.07</text>
+        <text x="362" y="315" fill="#9aa4b8" font-size="12">ΔCash <tspan fill="#26c281">−269,711</tspan></text>
+
+        <rect x="616" y="252" width="200" height="78" rx="8" fill="#1c2029" stroke="#272d3a"/>
+        <text x="632" y="273" fill="#9aa4b8" font-size="11.5">02-20 · 对冲②</text>
+        <text x="632" y="294" fill="#e6e9ef" font-size="12">IV 继续微涨（未达目标）</text>
+        <text x="632" y="315" fill="#9aa4b8" font-size="12">ΔCash <tspan fill="#f2555a">+529,073</tspan></text>
+
+        <rect x="886" y="252" width="200" height="78" rx="8" fill="#1c2029" stroke="#272d3a"/>
+        <text x="902" y="273" fill="#9aa4b8" font-size="11.5">02-24 · 全部了结</text>
+        <text x="902" y="294" fill="#e6e9ef" font-size="12">IV 购17.96 ／ 沽17.75</text>
+        <text x="902" y="315" fill="#9aa4b8" font-size="12">ΔCash <tspan fill="#26c281">−429,293</tspan></text>
+      </g>
+    </svg>
+    <div class="lgd">
+      <span><i style="background:#4a9eff"></i>50ETF 价格</span>
+      <span><i style="background:#a78bfa"></i>行权价 2.750</span>
+      <span><i style="background:#f2555a"></i>上涨节点</span>
+      <span><i style="background:#26c281"></i>下跌节点</span>
+    </div>
+  </div>
+
+  <div class="note note-tip"><b>关键逻辑：</b>三次 Delta 偏离（−26.9万 ／ +52.9万 ／ −42.9万）被对冲动作逐一「抹平回零附近」，
+    这个「偏离 → 归零」的循环就是 Gamma Scalping 兑现标的实际波动收益的过程。隐含波动率全程只涨了约 1 个波动率，
+    远未达预设的 +3 个波动率目标，最终收益几乎全部来自 Gamma 而非 Vega。</div>
+</section>
+
+<!-- ============ 2. 认购腿 ============ -->
+<section>
+  <div class="sec-h"><span class="sec-n a">A</span><h2>交易 A：认购期权腿（50ETF购3月2750）</h2></div>
+  <div class="sec-d">买 40 → 加 10 → 减 18 → 平 32，共 4 笔成交，全程净收益 <b class="pos">+158 元</b>。
+    加仓买在低位 0.0450、减仓卖在高位 0.0901，这一腿靠调仓价差把 Gamma 收益兑现了出来。</div>
+
+  <div class="card">
+    <div class="card-t">认购期权价格路径与持仓变化</div>
+    <div class="card-s">上半：合约成交价（红点=买入，绿点=卖出）｜下半：持仓张数阶梯</div>
+    <svg viewBox="0 0 1000 340" role="img">
+      <g stroke="#222833" stroke-width="1">
+        <line x1="60" y1="67"   x2="980" y2="67"/>
+        <line x1="60" y1="108"  x2="980" y2="108"/>
+        <line x1="60" y1="149"  x2="980" y2="149"/>
+        <line x1="60" y1="190"  x2="980" y2="190"/>
+      </g>
+      <g fill="#6b7686" font-size="11" text-anchor="end">
+        <text x="52" y="62">0.0850</text><text x="52" y="103">0.0700</text>
+        <text x="52" y="144">0.0550</text><text x="52" y="185">0.0400</text>
+      </g>
+
+      <line x1="60" y1="126" x2="980" y2="126" stroke="#f5a524" stroke-width="1.3" stroke-dasharray="6 5" opacity=".85"/>
+      <text x="972" y="121" fill="#f5a524" font-size="11" text-anchor="end">50张加权成本 0.0635</text>
+
+      <polyline points="130,113.4 400,176.4 670,53.4 940,165.5"
+                fill="none" stroke="#f2555a" stroke-width="2.6" stroke-linejoin="round"/>
+      <circle cx="130" cy="113.4" r="7" fill="#f2555a"/>
+      <circle cx="400" cy="176.4" r="7" fill="#f2555a"/>
+      <circle cx="670" cy="53.4"  r="7" fill="#26c281"/>
+      <circle cx="940" cy="165.5" r="7" fill="#26c281"/>
+      <g font-size="12.5" font-weight="700" text-anchor="middle">
+        <text x="130" y="100" fill="#f2555a">0.0681 买</text>
+        <text x="400" y="196" fill="#f2555a">0.0450 买</text>
+        <text x="670" y="42"  fill="#26c281">0.0901 卖</text>
+        <text x="940" y="184" fill="#26c281">0.0490 卖</text>
+      </g>
+
+      <line x1="60" y1="302" x2="980" y2="302" stroke="#272d3a" stroke-width="1.4"/>
+      <text x="52" y="306" fill="#6b7686" font-size="11" text-anchor="end">持仓</text>
+      <g>
+        <rect x="100" y="245.3" width="60" height="56.7" rx="3" fill="#f2555a" opacity=".8"/>
+        <rect x="370" y="231.2" width="60" height="70.8" rx="3" fill="#f2555a" opacity=".8"/>
+        <rect x="640" y="256.7" width="60" height="45.3" rx="3" fill="#26c281" opacity=".5"/>
+        <rect x="910" y="299"   width="60" height="3"    rx="1.5" fill="#3a4150"/>
+      </g>
+      <g font-size="13" font-weight="700" text-anchor="middle" fill="#e6e9ef">
+        <text x="130" y="238">40</text><text x="400" y="224">50</text>
+        <text x="670" y="250">32</text><text x="940" y="290">0</text>
+      </g>
+      <g font-size="11.5" font-weight="600" text-anchor="middle">
+        <text x="130" y="319" fill="#f2555a">建仓 +40</text>
+        <text x="400" y="319" fill="#f2555a">加仓 +10</text>
+        <text x="670" y="319" fill="#26c281">减仓 −18</text>
+        <text x="940" y="319" fill="#26c281">平仓 −32</text>
+      </g>
+    </svg>
+    <div class="lgd">
+      <span><i style="background:#f2555a"></i>买入成交价</span>
+      <span><i style="background:#26c281"></i>卖出成交价</span>
+      <span><i style="background:#f5a524"></i>加权持仓成本</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-t">认购腿逐笔流水</div>
+    <div class="card-s">合约乘数 10,000 ｜ 现金流 = ±张数 × 价格 × 10,000 ｜ 节点盈亏 = 持仓市值 − 累计净现金支出（含已实现与浮动）</div>
+    <table>
+      <thead><tr>
+        <th>日期</th><th>动作</th><th>方向</th><th>成交价</th><th>张数</th><th>持仓</th><th>现金流(元)</th><th>节点累计盈亏</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>02-15</td><td>开仓建仓</td><td><span class="tag b">买入</span></td><td>0.0681</td><td>+40</td><td>40</td><td class="neg">−27,240</td><td class="flat">—</td></tr>
+        <tr><td>02-17</td><td>对冲① 加仓</td><td><span class="tag b">买入</span></td><td>0.0450</td><td>+10</td><td>50</td><td class="neg">−4,500</td><td class="neg">−9,240</td></tr>
+        <tr><td>02-20</td><td>对冲② 减仓</td><td><span class="tag s">卖出</span></td><td>0.0901</td><td>−18</td><td>32</td><td class="pos">+16,218</td><td class="pos">+13,310</td></tr>
+        <tr><td>02-24</td><td>全部了结</td><td><span class="tag s">卖出</span></td><td>0.0490</td><td>−32</td><td>0</td><td class="pos">+15,680</td><td class="pos">+158</td></tr>
+        <tr class="sum"><td colspan="6">认购腿合计</td><td class="pos">+158</td><td class="pos">+158</td></tr>
+      </tbody>
+    </table>
+    <div class="note"><b>值得留意的两处：</b>
+      ① 2/20 以 0.0901 减仓 18 张是全腿最漂亮的一笔——浮盈一度冲到 +13,310，但随后标的跌 2.22%，
+      剩下 32 张从 0.0901 跌回 0.0490，浮盈几乎全部回吐，最终只落袋 +158。<b>这正是原文强调「不对冲，Theta 就白烧了」的直观例子。</b>
+      ② 文中 2/24「当日认购期权价格」写 0.0480，后半段总结却用 0.0490 平仓；按 0.0480 算认购腿会变成 <b class="neg">−162 元</b>。
+      本表采用 0.0490（与原文 +158 的结论一致）。</div>
+  </div>
+</section>
+
+<!-- ============ 3. 认沽腿 ============ -->
+<section>
+  <div class="sec-h"><span class="sec-n b">B</span><h2>交易 B：认沽期权腿（50ETF沽3月2750）</h2></div>
+  <div class="sec-d">买 50 → 减 10 → 加 20 → 平 60，共 4 笔成交，净收益 <b class="pos">+10,070 元</b>。
+    这是真正的收益来源，占总盈利的 98.5%。核心动作是 2/20 在 0.0327 的低位补了 20 张，4 天后 0.0565 全部平掉。</div>
+
+  <div class="card">
+    <div class="card-t">认沽期权价格路径与持仓变化</div>
+    <div class="card-s">上半：合约成交价（红点=买入，绿点=卖出）｜下半：持仓张数阶梯</div>
+    <svg viewBox="0 0 1000 340" role="img">
+      <g stroke="#222833" stroke-width="1">
+        <line x1="60" y1="47"  x2="980" y2="47"/>
+        <line x1="60" y1="81"  x2="980" y2="81"/>
+        <line x1="60" y1="115" x2="980" y2="115"/>
+        <line x1="60" y1="149" x2="980" y2="149"/>
+        <line x1="60" y1="183" x2="980" y2="183"/>
+      </g>
+      <g fill="#6b7686" font-size="11" text-anchor="end">
+        <text x="52" y="42">0.0700</text><text x="52" y="76">0.0600</text>
+        <text x="52" y="110">0.0500</text><text x="52" y="144">0.0400</text>
+        <text x="52" y="178">0.0300</text>
+      </g>
+
+      <line x1="60" y1="136" x2="980" y2="136" stroke="#f5a524" stroke-width="1.3" stroke-dasharray="6 5" opacity=".85"/>
+      <text x="972" y="131" fill="#f5a524" font-size="11" text-anchor="end">70张加权成本 0.0438</text>
+
+      <polyline points="130,121.1 400,53.3 670,174.0 940,92.8"
+                fill="none" stroke="#26c281" stroke-width="2.6" stroke-linejoin="round"/>
+      <circle cx="130" cy="121.1" r="7" fill="#f2555a"/>
+      <circle cx="400" cy="53.3"  r="7" fill="#26c281"/>
+      <circle cx="670" cy="174.0" r="7" fill="#f2555a"/>
+      <circle cx="940" cy="92.8"  r="7" fill="#26c281"/>
+      <g font-size="12.5" font-weight="700" text-anchor="middle">
+        <text x="130" y="108" fill="#f2555a">0.0482 买</text>
+        <text x="400" y="40"  fill="#26c281">0.0681 卖</text>
+        <text x="670" y="192" fill="#f2555a">0.0327 买</text>
+        <text x="940" y="78"  fill="#26c281">0.0565 卖</text>
+      </g>
+
+      <line x1="60" y1="302" x2="980" y2="302" stroke="#272d3a" stroke-width="1.4"/>
+      <text x="52" y="306" fill="#6b7686" font-size="11" text-anchor="end">持仓</text>
+      <g>
+        <rect x="100" y="231.2" width="60" height="70.8" rx="3" fill="#f2555a" opacity=".8"/>
+        <rect x="370" y="245.3" width="60" height="56.7" rx="3" fill="#26c281" opacity=".5"/>
+        <rect x="640" y="217"   width="60" height="85"   rx="3" fill="#f2555a" opacity=".8"/>
+        <rect x="910" y="299"   width="60" height="3"    rx="1.5" fill="#3a4150"/>
+      </g>
+      <g font-size="13" font-weight="700" text-anchor="middle" fill="#e6e9ef">
+        <text x="130" y="224">50</text><text x="400" y="238">40</text>
+        <text x="670" y="210">60</text><text x="940" y="290">0</text>
+      </g>
+      <g font-size="11.5" font-weight="600" text-anchor="middle">
+        <text x="130" y="319" fill="#f2555a">建仓 +50</text>
+        <text x="400" y="319" fill="#26c281">减仓 −10</text>
+        <text x="670" y="319" fill="#f2555a">加仓 +20</text>
+        <text x="940" y="319" fill="#26c281">平仓 −60</text>
+      </g>
+    </svg>
+    <div class="lgd">
+      <span><i style="background:#f2555a"></i>买入成交价</span>
+      <span><i style="background:#26c281"></i>卖出成交价</span>
+      <span><i style="background:#f5a524"></i>加权持仓成本</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-t">认沽腿逐笔流水</div>
+    <div class="card-s">合约乘数 10,000 ｜ 节点盈亏 = 持仓市值 − 累计净现金支出（含已实现与浮动）</div>
+    <table>
+      <thead><tr>
+        <th>日期</th><th>动作</th><th>方向</th><th>成交价</th><th>张数</th><th>持仓</th><th>现金流(元)</th><th>节点累计盈亏</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>02-15</td><td>开仓建仓</td><td><span class="tag b">买入</span></td><td>0.0482</td><td>+50</td><td>50</td><td class="neg">−24,100</td><td class="flat">—</td></tr>
+        <tr><td>02-17</td><td>对冲① 减仓</td><td><span class="tag s">卖出</span></td><td>0.0681</td><td>−10</td><td>40</td><td class="pos">+6,810</td><td class="pos">+9,950</td></tr>
+        <tr><td>02-20</td><td>对冲② 加仓</td><td><span class="tag b">买入</span></td><td>0.0327</td><td>+20</td><td>60</td><td class="neg">−6,540</td><td class="neg">−4,210</td></tr>
+        <tr><td>02-24</td><td>全部了结</td><td><span class="tag s">卖出</span></td><td>0.0565</td><td>−60</td><td>0</td><td class="pos">+33,900</td><td class="pos">+10,070</td></tr>
+        <tr class="sum"><td colspan="6">认沽腿合计</td><td class="pos">+10,070</td><td class="pos">+10,070</td></tr>
+      </tbody>
+    </table>
+    <div class="note"><b>收益最集中的一笔：</b>2/20 在 0.0327 加的 20 张，4 天后以 0.0565 平掉，单这一笔就赚了
+      20 × (0.0565 − 0.0327) × 10,000 = <b class="pos">4,760 元</b>，占认沽腿的 47%、全策略的 47%。
+      这正是 Gamma Scalping 的精髓：<b>标的涨 → Delta 转正 → 减认购加认沽把 Delta 拉回零，顺手在低位囤了便宜筹码</b>；
+      等标的再跌回来，这些低位筹码就成了利润。所谓「低买高卖」在这里不是主观择时，而是 Delta 对冲的副产品。</div>
+  </div>
+</section>
+
+<!-- ============ 4. 对冲过程 ============ -->
+<section>
+  <div class="sec-h"><span class="sec-n c">C</span><h2>交易 C：三次 Gamma Scalping 对冲（Delta 归零全过程）</h2></div>
+  <div class="sec-d">这是整个策略的骨架。每次标的波动超过 1%，Delta Cash 被动偏离，然后靠「加 IV 下行的合约、减 IV 上行的合约」调仓归零。</div>
+
+  <div class="card">
+    <div class="card-t">Delta Cash：偏离 → 对冲 → 归零（单位：元）</div>
+    <div class="card-s">彩柱 = 对冲前（被动偏离）｜蓝柱 = 对冲后（主动归零）｜红正绿负。小额柱已放大到最小可见高度</div>
+    <svg viewBox="0 0 1000 318" role="img">
+      <g stroke="#1e232d" stroke-width="1">
+        <line x1="60" y1="65"  x2="980" y2="65"/>
+        <line x1="60" y1="110" x2="980" y2="110"/>
+        <line x1="60" y1="200" x2="980" y2="200"/>
+        <line x1="60" y1="245" x2="980" y2="245"/>
+      </g>
+      <g fill="#5c6675" font-size="10.5" text-anchor="end">
+        <text x="52" y="69">+50万</text><text x="52" y="114">+25万</text>
+        <text x="52" y="204">−25万</text><text x="52" y="249">−50万</text>
+      </g>
+      <line x1="60" y1="155" x2="980" y2="155" stroke="#3a4150" stroke-width="1.6"/>
+      <text x="66" y="150" fill="#6b7686" font-size="11">0</text>
+
+      <!-- 柱：零轴 y=155，90px = 50万 -->
+      <rect x="90"  y="152" width="46" height="3"   rx="1.5" fill="#4a9eff"/>
+      <rect x="262" y="155" width="46" height="48.5" rx="3" fill="#26c281" opacity=".85"/>
+      <rect x="316" y="152" width="46" height="3"   rx="1.5" fill="#4a9eff"/>
+      <rect x="518" y="59.8" width="46" height="95.2" rx="3" fill="#f2555a" opacity=".85"/>
+      <rect x="572" y="152" width="46" height="3"   rx="1.5" fill="#4a9eff"/>
+      <rect x="774" y="155" width="46" height="77.3" rx="3" fill="#26c281" opacity=".85"/>
+
+      <g font-size="12" font-weight="700" text-anchor="middle">
+        <text x="113" y="145" fill="#4a9eff">+1,442</text>
+        <text x="285" y="218" fill="#26c281" font-size="11.5">−269,711</text>
+        <text x="339" y="145" fill="#4a9eff">+5,300</text>
+        <text x="541" y="52"  fill="#f2555a" font-size="11.5">+529,073</text>
+        <text x="595" y="145" fill="#4a9eff">+10,792</text>
+        <text x="797" y="247" fill="#26c281" font-size="11.5">−429,293</text>
+      </g>
+
+      <!-- 对冲标记 -->
+      <g fill="#f5a524" font-size="11.5" font-weight="700" text-anchor="middle">
+        <text x="312" y="262">▼ 对冲①</text>
+        <text x="568" y="262">▼ 对冲②</text>
+      </g>
+
+      <g font-size="11.5" text-anchor="middle" fill="#9aa4b8">
+        <text x="113" y="284">建仓后</text>
+        <text x="312" y="284">偏离 → 归零</text>
+        <text x="568" y="284">偏离 → 归零</text>
+        <text x="797" y="284">了结前</text>
+      </g>
+      <g font-size="10.5" text-anchor="middle" fill="#5c6675">
+        <text x="113" y="302">02-15</text>
+        <text x="312" y="302">02-17</text>
+        <text x="568" y="302">02-20</text>
+        <text x="797" y="302">02-24</text>
+      </g>
+    </svg>
+    <div class="lgd">
+      <span><i style="background:#26c281"></i>Delta Cash 为负 → 需补买正 Delta（加认购／减认沽）</span>
+      <span><i style="background:#f2555a"></i>Delta Cash 为正 → 需减正 Delta（减认购／加认沽）</span>
+      <span><i style="background:#4a9eff"></i>对冲后归零</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-t">四次操作的调仓明细</div>
+    <table>
+      <thead><tr><th>时点</th><th>标的变动</th><th>ΔCash 偏离</th><th>认购腿操作</th><th>认沽腿操作</th><th>调仓后 ΔCash</th><th>期间组合收益</th></tr></thead>
+      <tbody>
+        <tr><td>02-15 建仓</td><td class="flat">—</td><td class="pos">+1,442</td>
+            <td>买 40 张 @0.0681</td><td>买 50 张 @0.0482</td><td class="pos">+1,442</td><td class="flat">—</td></tr>
+        <tr><td>02-17 对冲①</td><td class="neg">−1.41% → 2.721</td><td class="neg">−269,711</td>
+            <td>加 +10 → 50 张<br><span style="color:#6b7686;font-size:11.5">IV 17.50→16.99 下行，故加仓</span></td>
+            <td>减 −10 → 40 张<br><span style="color:#6b7686;font-size:11.5">IV 16.51→17.07 上行，故减仓</span></td>
+            <td class="pos">+5,300</td><td class="pos">+708</td></tr>
+        <tr><td>02-20 对冲②</td><td class="pos">+2.83% → 2.798</td><td class="pos">+529,073</td>
+            <td>减 −18 → 32 张</td>
+            <td>加 +20 → 60 张</td>
+            <td class="pos">+10,792</td><td class="pos">+8,373</td></tr>
+        <tr><td>02-24 了结</td><td class="neg">−2.22% → 2.736</td><td class="neg">−429,293</td>
+            <td>全平 32 张 @0.0490</td><td>全平 60 张 @0.0565</td><td class="flat">0（清仓）</td><td class="pos">+783</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note note-tip"><b>对冲方式的选择逻辑（原文补充）：</b>本例用「持仓合约加减仓」做 Delta 对冲，前提是当时 IV 与基差都相对稳定。
+    换成别的市场环境，应按成本优选原则切换：<br>
+    · 期权合成价格相对现货<b>大幅升水</b> → 负 Delta 对冲优先用<b>现货</b>；<b>大幅贴水</b> → 正 Delta 对冲优先用<b>现货</b><br>
+    · IV <b>偏低</b> → 以<b>增加买权</b>为主对冲；IV <b>偏高</b> → 以<b>增加卖权</b>为主对冲<br>
+    本质都是围绕波动率曲面套利、期权基差套利的原则，挑当下最便宜的那条腿去调。</div>
+</section>
+
+<!-- ============ 5. Greeks 稳定性 ============ -->
+<section>
+  <div class="sec-h"><span class="sec-n d">04</span><h2>持仓期 Greeks 稳定性：只有 Delta 在动，其余基本不动</h2></div>
+  <div class="sec-d">正 Gamma 组合的特征在这里体现得很清楚：Gamma / Vega / Theta 在 7 个交易日里基本横住，只有 Delta 随标的来回摆。
+    这正是「时间消耗可控、靠波动赚钱」的实证。</div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-t">Gamma Cash（元）· 基本持稳</div>
+      <div class="card-s">17.8 万 → 21.1 万，末段因标的最靠近行权价反而走高</div>
+      <svg viewBox="0 0 460 205" role="img">
+        <g stroke="#222833" stroke-width="1">
+          <line x1="46" y1="30" x2="450" y2="30"/><line x1="46" y1="72" x2="450" y2="72"/>
+          <line x1="46" y1="114" x2="450" y2="114"/><line x1="46" y1="156" x2="450" y2="156"/>
+        </g>
+        <g fill="#6b7686" font-size="10" text-anchor="end">
+          <text x="40" y="34">22万</text><text x="40" y="76">20万</text>
+          <text x="40" y="118">18万</text><text x="40" y="160">16万</text>
+        </g>
+        <polyline points="66,99.1 143,95.2 220,101.3 297,117.9 374,104.9 440,49.1"
+                  fill="none" stroke="#a78bfa" stroke-width="2.2" stroke-linejoin="round"/>
+        <g fill="#a78bfa">
+          <circle cx="66" cy="99.1" r="4"/><circle cx="143" cy="95.2" r="4"/><circle cx="220" cy="101.3" r="4"/>
+          <circle cx="297" cy="117.9" r="4"/><circle cx="374" cy="104.9" r="4"/><circle cx="440" cy="49.1" r="4"/>
+        </g>
+        <g fill="#e6e9ef" font-size="9.5" font-weight="600" text-anchor="middle">
+          <text x="66" y="88">18.7万</text><text x="143" y="84">18.9万</text><text x="220" y="90">18.6万</text>
+          <text x="297" y="107">17.8万</text><text x="374" y="93">18.4万</text><text x="440" y="38">21.1万</text>
+        </g>
+        <g fill="#6b7686" font-size="9.5" text-anchor="middle">
+          <text x="66" y="180">建仓</text><text x="143" y="180">①前</text><text x="220" y="180">①后</text>
+          <text x="297" y="180">②前</text><text x="374" y="180">②后</text><text x="440" y="180">了结</text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="card">
+      <div class="card-t">Vega / Theta Cash（元）· 双稳</div>
+      <div class="card-s">实线 = Vega（左轴）｜虚线 = Theta，单独压缩于图下方</div>
+      <svg viewBox="0 0 460 205" role="img">
+        <g stroke="#222833" stroke-width="1">
+          <line x1="46" y1="30" x2="450" y2="30"/><line x1="46" y1="74" x2="450" y2="74"/>
+          <line x1="46" y1="118" x2="450" y2="118"/>
+        </g>
+        <g fill="#6b7686" font-size="10" text-anchor="end">
+          <text x="40" y="34">3,100</text><text x="40" y="78">2,900</text><text x="40" y="122">2,700</text>
+        </g>
+        <polyline points="66,43.6 143,71.8 220,71.6 297,126.6 374,114.7 440,123.1"
+                  fill="none" stroke="#f5a524" stroke-width="2.2" stroke-linejoin="round"/>
+        <g fill="#f5a524">
+          <circle cx="66" cy="43.6" r="4"/><circle cx="143" cy="71.8" r="4"/><circle cx="220" cy="71.6" r="4"/>
+          <circle cx="297" cy="126.6" r="4"/><circle cx="374" cy="114.7" r="4"/><circle cx="440" cy="123.1" r="4"/>
+        </g>
+        <polyline points="66,163.7 143,164.1 220,159.8 297,149.2 374,153.3 440,143"
+                  fill="none" stroke="#2dd4bf" stroke-width="2.2" stroke-linejoin="round" stroke-dasharray="5 3"/>
+        <g fill="#2dd4bf">
+          <circle cx="66" cy="163.7" r="3.5"/><circle cx="143" cy="164.1" r="3.5"/><circle cx="220" cy="159.8" r="3.5"/>
+          <circle cx="297" cy="149.2" r="3.5"/><circle cx="374" cy="153.3" r="3.5"/><circle cx="440" cy="143" r="3.5"/>
+        </g>
+        <g fill="#6b7686" font-size="9.5" text-anchor="middle">
+          <text x="66" y="190">建仓</text><text x="143" y="190">①前</text><text x="220" y="190">①后</text>
+          <text x="297" y="190">②前</text><text x="374" y="190">②后</text><text x="440" y="190">了结</text>
+        </g>
+        <text x="52" y="20" fill="#f5a524" font-size="10.5" font-weight="700">Vega 3,038 → 2,677</text>
+        <text x="330" y="20" fill="#2dd4bf" font-size="10.5" font-weight="700">Theta −732 → −885</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 6. 收益归因 + 核对 ============ -->
+<section>
+  <div class="sec-h"><span class="sec-n">05</span><h2>收益归因与数据核对</h2></div>
+
+  <div class="card">
+    <div class="card-t">双腿收益归因</div>
+    <table>
+      <thead><tr><th>项目</th><th>累计买入支出</th><th>累计卖出回收</th><th>净收益</th><th>占总收益</th><th>收益率(对100万账户)</th></tr></thead>
+      <tbody>
+        <tr><td>认购腿（购3月2750）</td><td>31,740</td><td>31,898</td><td class="pos">+158</td><td>1.5%</td><td class="pos">+0.016%</td></tr>
+        <tr><td>认沽腿（沽3月2750）</td><td>30,640</td><td>40,710</td><td class="pos">+10,070</td><td>98.5%</td><td class="pos">+1.007%</td></tr>
+        <tr class="sum"><td>合计</td><td>62,380</td><td>72,608</td><td class="pos">+10,228</td><td>100%</td><td class="pos">+1.023%</td></tr>
+      </tbody>
+    </table>
+    <div class="note note-tip" style="margin-top:16px"><b>归因结论：</b>预设盈利目标是 1%（1 万元），最终 1.02% 达标。
+      但兑现路径和预设完全不同——原本赌的是「两会事件驱动 + IV 从 16% 低位修复」，结果 IV 只涨了约 1 个波动率（远未达 +3 个的目标），
+      Vega Cash 甚至从 3,038 微降到 2,677；真正把钱赚出来的，是标的三次超 1% 的来回摆动带来的 Gamma。
+      <b>典型的「剧本 A 写、剧本 B 演，但结果达标」</b>——这也是正 Gamma 组合相对纯 Vega 赌博的优势：标的不动也不怕，只要动就行。</div>
+  </div>
+
+  <div class="card">
+    <div class="card-t">数据核对：原文数值 vs 逐笔重算</div>
+    <table>
+      <thead><tr><th>项目</th><th>原文数值</th><th>逐笔重算</th><th>差异</th><th>判断</th></tr></thead>
+      <tbody>
+        <tr><td>认购腿收益</td><td>+158</td><td>+158</td><td class="flat">0</td><td class="pos">一致</td></tr>
+        <tr><td>认沽腿收益</td><td>+10,470</td><td>+10,070</td><td class="neg">−400</td><td class="neg">原文疑为笔误</td></tr>
+        <tr><td>两腿合计</td><td>+10,628</td><td>+10,228</td><td class="neg">−400</td><td class="flat">随认沽腿连带</td></tr>
+        <tr><td>占账户比例</td><td>1.06%</td><td>1.02%</td><td class="neg">−0.04pct</td><td class="flat">仍超 1% 目标</td></tr>
+        <tr><td>2/24 认购价</td><td>0.0480（正文）／0.0490（总结）</td><td>—</td><td class="neg">0.0010</td><td class="neg">原文前后不一致</td></tr>
+      </tbody>
+    </table>
+    <div class="note"><b>重算过程（认沽腿）：</b>6,810（2/17 卖 10 张）+ 33,900（2/24 平 60 张）− 24,100（2/15 买 50 张）− 6,540（2/20 买 20 张）
+      = <b>10,070 元</b>，与原文的 10,470 差 400 元。差额不影响整体结论，但引用原文数字时建议改用重算值。
+      若沿用原文的 10,470，则合计 10,628、占比 1.06%，同样达标。</div>
+  </div>
+</section>
+
+<footer>
+  · 图表基于原文公开数据手工核算绘制，合约乘数按上证50ETF期权标准 10,000 计。<br>
+  · 所有 Greeks Cash、隐含波动率、标的价格均取自原文，未做任何外推假设；收益口径为「持仓市值 − 累计净现金支出」。<br>
+  · 本页仅为交易过程的结构化复盘与教学示意，不构成任何投资建议。<br>
+  · 生成时间：2026-10-22 ｜ 数据源：<a href="https://mp.weixin.qq.com/s/g_w17wjm5rV5nTNGV6CxgA" style="color:#4a9eff;text-decoration:none" target="_blank">发鹏期权说 ·《期权买方的Gamma Scalping技巧》</a>
+</footer>
+
+</div>
+</body>
+</html>
